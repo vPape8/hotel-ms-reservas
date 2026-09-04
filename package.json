@@ -1,0 +1,19 @@
+{
+	"name": "hotel-ms-reservas",
+	"version": "0.1.0",
+	"private": true,
+	"description": "Microservicio de reservas del sistema de gestion hotelera",
+	"main": "dist/index.js",
+	"scripts": {
+		"build": "tsc -p tsconfig.json",
+		"start": "node dist/index.js",
+		"test": "npm run build && node --test dist/**/*.test.js"
+	},
+	"engines": {
+		"node": ">=20"
+	},
+	"devDependencies": {
+		"@types/node": "^22.10.0",
+		"typescript": "^5.7.0"
+	}
+}
