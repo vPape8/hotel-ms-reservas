@@ -4,8 +4,11 @@ import { AddressInfo } from 'node:net';
 import { crearApp } from './app';
 
 test('expone health check y valida la creacion de reservas', async (context) => {
-	const servidor = crearApp();
-	await new Promise<void>((resolve) => servidor.listen(0, resolve));
+	const servidor = crearApp().listen(0);
+	await new Promise<void>((resolve, reject) => {
+		servidor.once('listening', resolve);
+		servidor.once('error', reject);
+	});
 	context.after(() => servidor.close());
 
 	const puerto = (servidor.address() as AddressInfo).port;
@@ -14,6 +17,9 @@ test('expone health check y valida la creacion de reservas', async (context) => 
 	const health = await fetch(`${baseUrl}/health`);
 	assert.equal(health.status, 200);
 	assert.deepEqual(await health.json(), { status: 'ok' });
+
+	const meSinToken = await fetch(`${baseUrl}/api/v1/me`);
+	assert.equal(meSinToken.status, 401);
 
 	const reserva = await fetch(`${baseUrl}/api/v1/user/reservas`, {
 		method: 'POST',

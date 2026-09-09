@@ -7,20 +7,21 @@ export interface ErrorValidacionReserva {
 
 export function validarReserva(reserva: IReserva): ErrorValidacionReserva[] {
 	const errores: ErrorValidacionReserva[] = [];
+	const huesped = reserva.huesped;
 
-	if (!reserva.codigo.trim()) {
+	if (!reserva.codigo?.trim()) {
 		errores.push({ campo: 'codigo', mensaje: 'El codigo es obligatorio' });
 	}
 
-	if (!reserva.idHabitacion.trim()) {
+	if (!reserva.idHabitacion?.trim()) {
 		errores.push({ campo: 'idHabitacion', mensaje: 'La habitacion es obligatoria' });
 	}
 
-	if (!reserva.huesped.nombre.trim() || !reserva.huesped.apellido.trim()) {
+	if (!huesped?.nombre?.trim() || !huesped.apellido?.trim()) {
 		errores.push({ campo: 'huesped', mensaje: 'El nombre y apellido son obligatorios' });
 	}
 
-	if (!reserva.huesped.email.includes('@')) {
+	if (!huesped?.email?.includes('@')) {
 		errores.push({ campo: 'huesped.email', mensaje: 'El email no es valido' });
 	}
 
