@@ -4,6 +4,8 @@ import { IReserva } from './config/models/IReserva';
 import { validarReserva } from './config/models/reservas/validarReserva';
 import { authMiddleware } from './middlewares/authMiddleware';
 import { meController } from './controllers/meController';
+import { crearReporteController } from './controllers/reporteController';
+import { crearPublicadorEventos, PublicadorEventos } from './messaging/publicadorEventos';
 
 function convertirReserva(payload: Record<string, unknown>): IReserva {
 	return {
@@ -13,7 +15,7 @@ function convertirReserva(payload: Record<string, unknown>): IReserva {
 	} as IReserva;
 }
 
-export function crearApp(): Express {
+export function crearApp(publicador: PublicadorEventos = crearPublicadorEventos()): Express {
 	const app = express();
 
 	app.use(express.json());
@@ -32,10 +34,13 @@ export function crearApp(): Express {
 			return;
 		}
 
+		// Asíncrono: la reserva no espera al broker. Si falla, el publicador lo deja en el log.
+		void publicador.publicarReservaCreada(reserva).catch(() => undefined);
 		respuesta.status(201).json({ data: reserva });
 	});
 
 	app.get('/api/v1/me', authMiddleware, meController);
+	app.post('/api/v1/admin/reportes', authMiddleware, crearReporteController(publicador));
 
 	app.use((_solicitud, respuesta) => {
 		respuesta.status(404).json({ error: 'RUTA_NO_ENCONTRADA' });
