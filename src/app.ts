@@ -1,21 +1,42 @@
-import express, { Express, NextFunction, Request, Response } from 'express';
+import express, { Express, NextFunction, Request, RequestHandler, Response } from 'express';
 import passport from 'passport';
-import { IReserva } from './config/models/IReserva';
-import { validarReserva } from './config/models/reservas/validarReserva';
-import { authMiddleware } from './middlewares/authMiddleware';
+import { crearPoolBaseDatos } from './config/database';
 import { meController } from './controllers/meController';
 import { crearReporteController } from './controllers/reporteController';
+import { crearProductorEventosReserva, ProductorEventosReserva } from './messaging/kafka/productorEventosReserva';
 import { crearPublicadorEventos, PublicadorEventos } from './messaging/publicadorEventos';
+import { authMiddleware } from './middlewares/authMiddleware';
+import { crearAutenticacionCognito } from './middlewares/cognitoMiddleware';
+import { InMemoryReservaRepository, MySqlReservaRepository, ReservaRepository } from './repositories/reservaRepository';
+import { crearReservaRoutes } from './routes/reservaRoutes';
+import { ReservaService } from './services/reservaService';
 
-function convertirReserva(payload: Record<string, unknown>): IReserva {
-	return {
-		...payload,
-		fechaEntrada: new Date(String(payload.fechaEntrada)),
-		fechaSalida: new Date(String(payload.fechaSalida))
-	} as IReserva;
+export interface OpcionesApp {
+	publicador?: PublicadorEventos;
+	productorKafka?: ProductorEventosReserva;
+	repositorio?: ReservaRepository;
+	/** Entra ID (Admin / Operador). */
+	autenticacion?: RequestHandler;
+	/** Cognito (huésped registrado). */
+	autenticacionCliente?: RequestHandler;
 }
 
-export function crearApp(publicador: PublicadorEventos = crearPublicadorEventos()): Express {
+/** MySQL si MYSQL_HOST está definido; si no, memoria (tests y desarrollo sin base de datos). */
+export function crearRepositorioReservas(): ReservaRepository {
+	const pool = crearPoolBaseDatos();
+	if (!pool) {
+		console.warn(JSON.stringify({ servicio: 'hotel-ms-reservas', nivel: 'warn', evento: 'RESERVAS_EN_MEMORIA', detalle: 'MYSQL_HOST no definido' }));
+		return new InMemoryReservaRepository();
+	}
+	return new MySqlReservaRepository(pool);
+}
+
+export function crearApp(opciones: OpcionesApp = {}): Express {
+	const publicador = opciones.publicador ?? crearPublicadorEventos();
+	const productorKafka = opciones.productorKafka ?? crearProductorEventosReserva();
+	const servicio = new ReservaService(opciones.repositorio ?? crearRepositorioReservas(), publicador, productorKafka);
+	const autenticacion = opciones.autenticacion ?? authMiddleware;
+	const autenticacionCliente = opciones.autenticacionCliente ?? crearAutenticacionCognito();
 	const app = express();
 
 	app.use(express.json());
@@ -25,22 +46,9 @@ export function crearApp(publicador: PublicadorEventos = crearPublicadorEventos(
 		respuesta.json({ status: 'ok' });
 	});
 
-	app.post('/api/v1/user/reservas', (solicitud: Request, respuesta: Response) => {
-		const reserva = convertirReserva(solicitud.body as Record<string, unknown>);
-		const errores = validarReserva(reserva);
-
-		if (errores.length > 0) {
-			respuesta.status(400).json({ error: 'VALIDACION_RESERVA', detalles: errores });
-			return;
-		}
-
-		// Asíncrono: la reserva no espera al broker. Si falla, el publicador lo deja en el log.
-		void publicador.publicarReservaCreada(reserva).catch(() => undefined);
-		respuesta.status(201).json({ data: reserva });
-	});
-
-	app.get('/api/v1/me', authMiddleware, meController);
-	app.post('/api/v1/admin/reportes', authMiddleware, crearReporteController(publicador));
+	app.use('/api/v1', crearReservaRoutes(servicio, autenticacion, autenticacionCliente));
+	app.get('/api/v1/me', autenticacion, meController);
+	app.post('/api/v1/admin/reportes', autenticacion, crearReporteController(publicador));
 
 	app.use((_solicitud, respuesta) => {
 		respuesta.status(404).json({ error: 'RUTA_NO_ENCONTRADA' });

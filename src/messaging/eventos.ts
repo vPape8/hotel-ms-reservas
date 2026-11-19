@@ -16,6 +16,9 @@ export type ReservaPublicada = Omit<IReserva, 'fechaEntrada' | 'fechaSalida' | '
 	fechaSalida: string;
 };
 
+/** reserva.estado.<estado>: la reserva completa con su estado nuevo, más el que tenía antes. */
+export type ReservaEstadoPublicada = ReservaPublicada & { estadoAnterior: string };
+
 export function crearEvento<T>(tipo: string, datos: T): EventoDominio<T> {
 	return { id: randomUUID(), tipo, version: 1, origen: 'hotel-ms-reservas', ocurridoEn: new Date().toISOString(), datos };
 }

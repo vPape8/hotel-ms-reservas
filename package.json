@@ -15,6 +15,9 @@
 	"dependencies": {
 		"amqplib": "^0.10.9",
 		"express": "^4.21.2",
+		"jose": "^5.10.0",
+		"kafkajs": "^2.2.4",
+		"mysql2": "^3.24.6",
 		"passport": "^0.7.0",
 		"passport-azure-ad": "^4.3.5"
 	},

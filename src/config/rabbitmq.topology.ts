@@ -21,23 +21,23 @@ interface DefinicionBinding {
 
 export const topologiaReservas = {
 	exchanges: [
-		// Flujo del usuario: los consumidores se suscriben por routing key (reserva.creada).
+		// Flujo del usuario: los consumidores se suscriben por patrón (reserva.creada, reserva.estado.*, reserva.#).
 		{ nombre: rabbitConfig.exchanges.reservas, tipo: 'topic' },
 		// Flujo del admin: fanout, cada cola enlazada recibe una copia de reporte.solicitado.
 		{ nombre: rabbitConfig.exchanges.reportesFanout, tipo: 'fanout' },
-		// Dead-letter exchange compartido: todo termina en la DLQ única hotel.dlq.
+		// Dead-letter exchange: cada cola de hotel-ms-notificaciones tiene su DLQ (<cola>.dlq).
 		{ nombre: rabbitConfig.exchanges.deadLetter, tipo: 'direct' }
 	] satisfies DefinicionExchange[],
 
 	colas: [
-		// DLQ única: aquí van los mensajes devueltos por el broker al publicar (sin cola destino).
-		{ nombre: rabbitConfig.queues.dlq }
+		// Aquí van los mensajes devueltos por el broker al publicar (sin cola destino).
+		{ nombre: rabbitConfig.queues.noEntregados }
 	] satisfies DefinicionCola[],
 
 	bindings: [
 		{
 			exchange: rabbitConfig.exchanges.deadLetter,
-			cola: rabbitConfig.queues.dlq,
+			cola: rabbitConfig.queues.noEntregados,
 			routingKey: rabbitConfig.routingKeys.noEntregado
 		}
 	] satisfies DefinicionBinding[]

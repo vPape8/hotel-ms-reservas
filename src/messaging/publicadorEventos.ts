@@ -1,14 +1,16 @@
 import amqp, { ConfirmChannel, ConsumeMessage } from 'amqplib';
-import { IReserva } from '../config/models/IReserva';
+import { EstadoReserva, IReserva } from '../config/models/IReserva';
 import { ISolicitudReporte } from '../config/models/reportes/ISolicitudReporte';
 import { rabbitConfig } from '../config/rabbitmq.config';
 import { declararTopologia } from '../config/rabbitmq.topology';
-import { crearEvento, EventoDominio, reservaParaPublicar } from './eventos';
+import { crearEvento, EventoDominio, ReservaEstadoPublicada, reservaParaPublicar } from './eventos';
 import { logMensajeria } from './logMensajeria';
 
 /** Lo único que conoce la lógica de negocio: no sabe de exchanges, colas ni routing keys. */
 export interface PublicadorEventos {
 	publicarReservaCreada(reserva: IReserva): Promise<void>;
+	/** Aviso al huésped: routing key reserva.estado.<estado nuevo en minúsculas>. */
+	publicarEstadoCambiado(reserva: IReserva, estadoAnterior: EstadoReserva): Promise<void>;
 	publicarReporteSolicitado(solicitud: ISolicitudReporte): Promise<string>;
 	cerrar(): Promise<void>;
 }
@@ -17,6 +19,10 @@ export interface PublicadorEventos {
 export class PublicadorDesactivado implements PublicadorEventos {
 	async publicarReservaCreada(reserva: IReserva): Promise<void> {
 		logMensajeria('warn', 'MENSAJERIA_DESACTIVADA', { tipo: rabbitConfig.routingKeys.reservaCreada, codigo: reserva.codigo });
+	}
+
+	async publicarEstadoCambiado(reserva: IReserva, estadoAnterior: EstadoReserva): Promise<void> {
+		logMensajeria('warn', 'MENSAJERIA_DESACTIVADA', { tipo: routingKeyEstado(reserva.estado), codigo: reserva.codigo, estadoAnterior });
 	}
 
 	async publicarReporteSolicitado(solicitud: ISolicitudReporte): Promise<string> {
@@ -39,6 +45,11 @@ export class PublicadorRabbit implements PublicadorEventos {
 		await this.publicar(rabbitConfig.exchanges.reservas, crearEvento(rabbitConfig.routingKeys.reservaCreada, reservaParaPublicar(reserva)));
 	}
 
+	async publicarEstadoCambiado(reserva: IReserva, estadoAnterior: EstadoReserva): Promise<void> {
+		const datos: ReservaEstadoPublicada = { ...reservaParaPublicar(reserva), estadoAnterior };
+		await this.publicar(rabbitConfig.exchanges.reservas, crearEvento(routingKeyEstado(reserva.estado), datos));
+	}
+
 	async publicarReporteSolicitado(solicitud: ISolicitudReporte): Promise<string> {
 		const evento = crearEvento(rabbitConfig.routingKeys.reporteSolicitado, solicitud);
 		await this.publicar(rabbitConfig.exchanges.reportesFanout, evento);
@@ -55,7 +66,7 @@ export class PublicadorRabbit implements PublicadorEventos {
 	/**
 	 * Publica con confirmación del broker (publisher confirms) y mandatory=true:
 	 * - si el broker no confirma, se registra en el log como NO_PUBLICADO y se propaga el error;
-	 * - si no hay cola para la routing key, el broker lo devuelve y termina en la DLQ (hotel.dlq).
+	 * - si no hay cola para la routing key, el broker lo devuelve y termina en hotel.no-entregados.dlq.
 	 */
 	private async publicar<T>(exchange: string, evento: EventoDominio<T>): Promise<void> {
 		const contenido = Buffer.from(JSON.stringify(evento));
@@ -118,7 +129,7 @@ export class PublicadorRabbit implements PublicadorEventos {
 		return canal;
 	}
 
-	/** Mensaje devuelto por el broker (sin cola destino): se registra y se guarda en la DLQ (hotel.dlq). */
+	/** Mensaje devuelto por el broker (sin cola destino): se registra y se guarda en hotel.no-entregados.dlq. */
 	private enviarANoEntregados(canal: ConfirmChannel, mensaje: ConsumeMessage): void {
 		const datos = {
 			id: mensaje.properties.messageId,
@@ -142,6 +153,11 @@ export class PublicadorRabbit implements PublicadorEventos {
 			}
 		});
 	}
+}
+
+/** reserva.estado.confirmada, reserva.estado.cancelada… (el tipo del evento es también su routing key). */
+export function routingKeyEstado(estado: EstadoReserva): string {
+	return `${rabbitConfig.routingKeys.reservaEstado}.${estado.toLowerCase()}`;
 }
 
 export function crearPublicadorEventos(): PublicadorEventos {
